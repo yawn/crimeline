@@ -1,0 +1,20 @@
+[package]
+name = "crimeline"
+version = "0.1.0"
+edition = "2024"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
+
+[dependencies]
+humansize = "2"
+parking_lot = "0.12"
+tracing = { version = "0.1", features = ["max_level_debug"] }
+
+[dev-dependencies]
+criterion = "0.8"
+proptest = "1"
+
+[[bench]]
+name = "usermap"
+harness = false

@@ -1,0 +1,11 @@
+[tools]
+"cargo:cargo-nextest" = "latest"
+"cargo:cargo-llvm-cov" = "latest"
+
+[tasks."test:bench"]
+description = "Run criterion benchmarks"
+run = "cargo bench"
+
+[tasks."test:unit"]
+description = "Run unit and property tests via nextest with coverage"
+run = "cargo +nightly llvm-cov nextest --html"
