@@ -1,8 +1,8 @@
 use crate::{Sharding, Uid, UserMap};
 
 pub struct Relationships {
-    pub blocks: UserMap,
-    pub follows: UserMap,
+    blocks: UserMap,
+    follows: UserMap,
 }
 
 impl Relationships {
@@ -13,8 +13,16 @@ impl Relationships {
         }
     }
 
-    pub fn mutual(&self, principal: Uid, target: Uid) -> bool {
+    pub fn is_blocked_by_principal(&self, principal: Uid, target: Uid) -> bool {
+        self.blocks.contains(target, principal)
+    }
+
+    pub fn is_mutual_of_principal(&self, principal: Uid, target: Uid) -> bool {
         self.blocks.contains(principal, target) && self.follows.contains(target, principal)
+    }
+
+    pub fn is_followed_by_principal(&self, principal: Uid, target: Uid) -> bool {
+        self.follows.contains(target, principal)
     }
 }
 
@@ -58,7 +66,7 @@ mod tests {
                     && ref_follows.contains(&(target, principal));
 
                 prop_assert_eq!(
-                    rel.mutual(principal, target),
+                    rel.is_mutual_of_principal(principal, target),
                     expected,
                     "mutual({}, {}): expected {}",
                     principal,
@@ -145,7 +153,7 @@ mod tests {
 
             for &(principal, target, expected) in &case.checks {
                 assert_eq!(
-                    rel.mutual(principal, target),
+                    rel.is_mutual_of_principal(principal, target),
                     expected,
                     "case '{}': mutual({}, {}) expected {}",
                     case.name,
