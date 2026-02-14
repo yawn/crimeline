@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use crate::stats::{HeapUsage, HeapWaste};
 use crate::users::Uid;
 
 /// Inner storage for one shard's adjacency lists.
@@ -44,12 +45,6 @@ impl Shard {
 
     pub fn get(&self, index: usize) -> Option<&[Uid]> {
         self.0.get(index).map(|v| v.as_slice())
-    }
-
-    pub fn heap_size(&self) -> usize {
-        let outer = self.0.capacity() * size_of::<Vec<Uid>>();
-        let inner: usize = self.0.iter().map(|v| v.capacity() * size_of::<Uid>()).sum();
-        outer + inner
     }
 
     pub fn insert(&mut self, index: usize, target: Uid) -> bool {
@@ -107,5 +102,103 @@ impl Shard {
         *list = merged;
 
         size_after
+    }
+}
+
+impl HeapUsage for Shard {
+    fn heap_usage(&self) -> usize {
+        let outer = self.0.capacity() * size_of::<Vec<Uid>>();
+        let inner: usize = self.0.iter().map(|v| v.capacity() * size_of::<Uid>()).sum();
+        outer + inner
+    }
+}
+
+impl HeapWaste for Shard {
+    fn heap_waste(&self) -> usize {
+        let empty = self.0.iter().filter(|v| v.is_empty()).count();
+        let excess = self.0.capacity() - self.0.len();
+        (empty + excess) * size_of::<Vec<Uid>>()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const UID_SIZE: usize = size_of::<Uid>();
+    const VEC_SIZE: usize = size_of::<Vec<Uid>>();
+
+    fn assert_stats(shard: &Shard, usage: usize, waste: usize, reason: &str) {
+        assert_eq!(shard.heap_usage(), usage, "heap_usage: {reason}");
+        assert_eq!(shard.heap_waste(), waste, "heap_waste: {reason}");
+    }
+
+    #[test]
+    fn stats_empty() {
+        assert_stats(&Shard::new(), 0, 0, "no allocations");
+    }
+
+    #[test]
+    fn stats_entry_without_targets() {
+        let mut s = Shard::new();
+        s.entry(0);
+        assert_stats(&s, VEC_SIZE, VEC_SIZE, "1 backbone slot, empty inner vec");
+    }
+
+    #[test]
+    fn stats_single_insert() {
+        let mut s = Shard::new();
+        s.insert(0, 42);
+        assert_stats(&s, VEC_SIZE + UID_SIZE, 0, "1 backbone slot + 1 target");
+    }
+
+    #[test]
+    fn stats_sparse_index() {
+        let mut s = Shard::new();
+        s.insert(2, 42);
+        assert_stats(
+            &s,
+            3 * VEC_SIZE + UID_SIZE,
+            2 * VEC_SIZE,
+            "3 backbone slots, slots 0 and 1 are empty padding",
+        );
+    }
+
+    #[test]
+    fn stats_dense_principals() {
+        let mut s = Shard::new();
+        s.insert(0, 1);
+        s.insert(1, 2);
+        assert_stats(
+            &s,
+            2 * VEC_SIZE + 2 * UID_SIZE,
+            0,
+            "2 dense backbone slots, no padding",
+        );
+    }
+
+    #[test]
+    fn stats_delete_leaves_empty_slot() {
+        let mut s = Shard::new();
+        s.insert(0, 1);
+        s.delete(0, 1);
+        assert_stats(
+            &s,
+            VEC_SIZE + UID_SIZE,
+            VEC_SIZE,
+            "inner vec retains cap=1 but is empty, counts as backbone waste",
+        );
+    }
+
+    #[test]
+    fn stats_merge_exact_capacity() {
+        let mut s = Shard::new();
+        s.merge(0, &[1, 2, 3]);
+        assert_stats(
+            &s,
+            VEC_SIZE + 3 * UID_SIZE,
+            0,
+            "shrink_to_fit gives exact capacity",
+        );
     }
 }

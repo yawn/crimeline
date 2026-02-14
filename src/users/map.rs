@@ -1,10 +1,10 @@
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use humansize::{BINARY, SizeFormatter};
 use parking_lot::RwLock;
 use tracing::{debug, trace};
 
+use crate::stats::Stats;
 use crate::users::{Uid, shard::Shard, sharding::Sharding};
 
 pub struct UserMap {
@@ -100,14 +100,6 @@ impl UserMap {
         )
     }
 
-    pub fn heap_size(&self) -> usize {
-        let shards_alloc = self.shards.len() * size_of::<RwLock<Shard>>();
-
-        let inner: usize = self.shards.iter().map(|s| s.read().heap_size()).sum();
-
-        shards_alloc + inner
-    }
-
     pub fn len(&self) -> usize {
         self.len.load(Ordering::Relaxed)
     }
@@ -131,7 +123,13 @@ impl UserMap {
 
 impl fmt::Display for UserMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", SizeFormatter::new(self.heap_size(), BINARY))
+        let mut stats = Stats::new("locks", self.shards.len() * size_of::<RwLock<Shard>>());
+
+        for s in self.shards.iter() {
+            stats.observe(&*s.read());
+        }
+
+        write!(f, "{stats}")
     }
 }
 
@@ -207,54 +205,6 @@ mod tests {
         }
         let expected_len: usize = reference.values().map(|s| s.len()).sum();
         assert_eq!(map.len(), expected_len, "len mismatch");
-    }
-
-    #[test]
-    fn display_shows_heap_size() {
-        struct Case {
-            name: &'static str,
-            sharding: Sharding,
-            principals: u32,
-            targets_per: u32,
-            expected_display: &'static str,
-        }
-
-        let cases = vec![
-            Case {
-                name: "empty S64",
-                sharding: Sharding::S64,
-                principals: 0,
-                targets_per: 0,
-                expected_display: "2 KiB",
-            },
-            Case {
-                name: "50k relationships",
-                sharding: Sharding::S64,
-                principals: 50,
-                targets_per: 1000,
-                expected_display: "202 KiB",
-            },
-            Case {
-                name: "500k relationships",
-                sharding: Sharding::S64,
-                principals: 500,
-                targets_per: 1000,
-                expected_display: "1.92 MiB",
-            },
-        ];
-
-        for case in &cases {
-            let map = UserMap::new(case.sharding);
-            for p in 0..case.principals {
-                map.add_bulk(p, (0..case.targets_per).map(|t| p * case.targets_per + t));
-            }
-            assert_eq!(
-                format!("{map}"),
-                case.expected_display,
-                "case '{}'",
-                case.name,
-            );
-        }
     }
 
     #[test]
