@@ -185,6 +185,18 @@ mod tests {
         }
     }
 
+    fn assert_contains(map: &UserMap, p: Uid, t: Uid, expected: bool, label: &str) {
+        assert_eq!(
+            map.contains(p, t),
+            expected,
+            "{label}: contains({p}, {t})",
+        );
+    }
+
+    fn assert_len(map: &UserMap, expected: usize, label: &str) {
+        assert_eq!(map.len(), expected, "{label}: len");
+    }
+
     fn assert_matches(
         map: &UserMap,
         reference: &HashMap<Uid, BTreeSet<Uid>>,
@@ -209,71 +221,60 @@ mod tests {
     }
 
     #[test]
-    fn edge_cases() {
-        let cases: Vec<(&str, Vec<Op>, Vec<(Uid, Uid, bool)>, usize)> = vec![
-            ("empty map", vec![], vec![(0, 0, false), (1, 1, false)], 0),
-            (
-                "self-reference",
-                vec![Op::Add(5, 5)],
-                vec![(5, 5, true), (5, 0, false)],
-                1,
-            ),
-            (
-                "large user ids",
-                vec![Op::Add(1_000_000, 2_000_000)],
-                vec![
-                    (1_000_000, 2_000_000, true),
-                    (1_000_000, 0, false),
-                    (0, 2_000_000, false),
-                ],
-                1,
-            ),
-            (
-                "shard boundary ids",
-                vec![Op::Add(127, 128), Op::Add(128, 127)],
-                vec![
-                    (127, 128, true),
-                    (128, 127, true),
-                    (127, 127, false),
-                    (128, 128, false),
-                ],
-                2,
-            ),
-            (
-                "remove from empty",
-                vec![Op::Remove(0, 1)],
-                vec![(0, 1, false)],
-                0,
-            ),
-            (
-                "add remove add",
-                vec![Op::Add(0, 1), Op::Remove(0, 1), Op::Add(0, 1)],
-                vec![(0, 1, true)],
-                1,
-            ),
-        ];
+    fn edge_add_remove_add() {
+        let map = UserMap::new(Sharding::S128);
+        map.add(0, 1);
+        map.remove(0, 1);
+        map.add(0, 1);
+        assert_contains(&map, 0, 1, true, "re-added after remove");
+        assert_len(&map, 1, "re-added after remove");
+    }
 
-        for (name, ops, checks, expected_len) in &cases {
-            let map = UserMap::new(Sharding::S128);
-            for op in ops {
-                match *op {
-                    Op::Add(p, t) => map.add(p, t),
-                    Op::Remove(p, t) => map.remove(p, t),
-                }
-            }
-            for &(p, t, expected) in checks {
-                assert_eq!(
-                    map.contains(p, t),
-                    expected,
-                    "case '{}': contains({}, {}) expected {}",
-                    name,
-                    p,
-                    t,
-                    expected,
-                );
-            }
-            assert_eq!(map.len(), *expected_len, "case '{}': len mismatch", name);
-        }
+    #[test]
+    fn edge_empty_map() {
+        let map = UserMap::new(Sharding::S128);
+        assert_contains(&map, 0, 0, false, "empty map");
+        assert_contains(&map, 1, 1, false, "empty map");
+        assert_len(&map, 0, "empty map");
+    }
+
+    #[test]
+    fn edge_large_user_ids() {
+        let map = UserMap::new(Sharding::S128);
+        map.add(1_000_000, 2_000_000);
+        assert_contains(&map, 1_000_000, 2_000_000, true, "large ids");
+        assert_contains(&map, 1_000_000, 0, false, "large ids, wrong target");
+        assert_contains(&map, 0, 2_000_000, false, "large ids, wrong principal");
+        assert_len(&map, 1, "large ids");
+    }
+
+    #[test]
+    fn edge_remove_from_empty() {
+        let map = UserMap::new(Sharding::S128);
+        map.remove(0, 1);
+        assert_contains(&map, 0, 1, false, "remove from empty");
+        assert_len(&map, 0, "remove from empty");
+    }
+
+    #[test]
+    fn edge_self_reference() {
+        let map = UserMap::new(Sharding::S128);
+        map.add(5, 5);
+        assert_contains(&map, 5, 5, true, "self-reference");
+        assert_contains(&map, 5, 0, false, "self-reference, wrong target");
+        assert_len(&map, 1, "self-reference");
+    }
+
+    #[test]
+    fn edge_shard_boundary_ids() {
+        let map = UserMap::new(Sharding::S128);
+        map.add(127, 128);
+        map.add(128, 127);
+        assert_contains(&map, 127, 128, true, "shard boundary");
+        assert_contains(&map, 128, 127, true, "shard boundary reverse");
+        assert_contains(&map, 127, 127, false, "shard boundary, wrong target");
+        assert_contains(&map, 128, 128, false, "shard boundary, wrong target");
+        assert_len(&map, 2, "shard boundary");
     }
 
     proptest! {
