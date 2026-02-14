@@ -121,6 +121,7 @@ impl UserMap {
     }
 }
 
+#[cfg_attr(coverage_nightly, coverage(off))]
 impl fmt::Display for UserMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut stats = Stats::new("locks", self.shards.len() * size_of::<RwLock<Shard>>());
