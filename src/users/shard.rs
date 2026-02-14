@@ -29,8 +29,14 @@ impl Shard {
     }
 
     pub fn entry(&mut self, index: usize) -> &mut Vec<Uid> {
-        if self.0.len() <= index {
-            self.0.resize_with(index + 1, Default::default);
+        let len = self.0.len();
+
+        if len <= index {
+            self.0.reserve_exact(index + 1 - len);
+
+            for _ in len..=index {
+                self.0.push(Vec::new());
+            }
         }
 
         &mut self.0[index]
