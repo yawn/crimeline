@@ -33,6 +33,8 @@ impl Sharding {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
+
     use super::*;
 
     const ALL: [Sharding; 12] = [
@@ -129,11 +131,12 @@ mod tests {
     }
 
     #[test]
-    fn variant_name_matches_count() {
+    fn variant_name_matches_count() -> Result<()> {
         for s in &ALL {
             let name = format!("{s:?}");
-            let n: usize = name[1..].parse().unwrap();
+            let n: usize = name[1..].parse()?;
             assert_eq!(s.count(), n, "{name}: variant name implies count {n}");
         }
+        Ok(())
     }
 }
