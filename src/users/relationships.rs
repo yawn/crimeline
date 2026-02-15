@@ -1,8 +1,8 @@
 use crate::{Sharding, Uid, UserMap};
 
 pub struct Relationships {
-    blocks: UserMap,
-    follows: UserMap,
+    pub blocks: UserMap,
+    pub follows: UserMap,
 }
 
 impl Relationships {
@@ -13,15 +13,15 @@ impl Relationships {
         }
     }
 
-    pub fn is_blocked_by_principal(&self, principal: Uid, target: Uid) -> bool {
+    pub fn is_blocked_by(&self, principal: Uid, target: Uid) -> bool {
         self.blocks.contains(target, principal)
     }
 
-    pub fn is_mutual_of_principal(&self, principal: Uid, target: Uid) -> bool {
+    pub fn is_mutual(&self, principal: Uid, target: Uid) -> bool {
         self.blocks.contains(principal, target) && self.follows.contains(target, principal)
     }
 
-    pub fn is_followed_by_principal(&self, principal: Uid, target: Uid) -> bool {
+    pub fn is_followed_by(&self, principal: Uid, target: Uid) -> bool {
         self.follows.contains(target, principal)
     }
 }
@@ -36,27 +36,45 @@ mod tests {
         Relationships::new(Sharding::S64)
     }
 
-    fn assert_blocked(rel: &Relationships, principal: Uid, target: Uid, expected: bool, label: &str) {
+    fn assert_blocked(
+        rel: &Relationships,
+        principal: Uid,
+        target: Uid,
+        expected: bool,
+        label: &str,
+    ) {
         assert_eq!(
-            rel.is_blocked_by_principal(principal, target),
+            rel.is_blocked_by(principal, target),
             expected,
-            "{label}: is_blocked_by_principal({principal}, {target})",
+            "{label}: is_blocked_by({principal}, {target})",
         );
     }
 
-    fn assert_followed(rel: &Relationships, principal: Uid, target: Uid, expected: bool, label: &str) {
+    fn assert_followed(
+        rel: &Relationships,
+        principal: Uid,
+        target: Uid,
+        expected: bool,
+        label: &str,
+    ) {
         assert_eq!(
-            rel.is_followed_by_principal(principal, target),
+            rel.is_followed_by(principal, target),
             expected,
-            "{label}: is_followed_by_principal({principal}, {target})",
+            "{label}: is_followed_by({principal}, {target})",
         );
     }
 
-    fn assert_mutual(rel: &Relationships, principal: Uid, target: Uid, expected: bool, label: &str) {
+    fn assert_mutual(
+        rel: &Relationships,
+        principal: Uid,
+        target: Uid,
+        expected: bool,
+        label: &str,
+    ) {
         assert_eq!(
-            rel.is_mutual_of_principal(principal, target),
+            rel.is_mutual(principal, target),
             expected,
-            "{label}: is_mutual_of_principal({principal}, {target})",
+            "{label}: is_mutual({principal}, {target})",
         );
     }
 
@@ -227,7 +245,7 @@ mod tests {
                     && ref_follows.contains(&(target, principal));
 
                 prop_assert_eq!(
-                    rel.is_mutual_of_principal(principal, target),
+                    rel.is_mutual(principal, target),
                     expected,
                     "mutual({}, {}): expected {}",
                     principal,
