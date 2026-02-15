@@ -47,6 +47,8 @@ impl Shard {
         self.0.get(index).map(|v| v.as_slice())
     }
 
+    /// Inserts exactly one (1) target. This will perform bad if used
+    /// for multiple uids (instead of using merge()).
     pub fn insert(&mut self, index: usize, target: Uid) -> bool {
         let list = self.entry(index);
 
@@ -64,6 +66,18 @@ impl Shard {
     /// at `index`. Returns the number of newly added targets.
     pub fn merge(&mut self, index: usize, incoming: &[Uid]) -> usize {
         let list = self.entry(index);
+
+        // Fast path: all incoming > all existing — just append.
+        if incoming
+            .first()
+            .zip(list.last())
+            .map_or(false, |(&first, &last)| first > last)
+        {
+            let before = list.len();
+            list.extend_from_slice(incoming);
+            return list.len() - before;
+        }
+
         let old = std::mem::take(list);
 
         let size_before = old.len();
