@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use parking_lot::RwLock;
 use tracing::{debug, trace};
 
-use crate::stats::Stats;
+use crate::usage::Usage;
 use crate::users::{Uid, shard::Shard, sharding::Sharding};
 
 pub struct UserMap {
@@ -124,13 +124,13 @@ impl UserMap {
 #[cfg_attr(coverage_nightly, coverage(off))]
 impl fmt::Display for UserMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut stats = Stats::new("locks", self.shards.len() * size_of::<RwLock<Shard>>());
+        let mut usage = Usage::new("locks", self.shards.len() * size_of::<RwLock<Shard>>());
 
         for s in self.shards.iter() {
-            stats.observe(&*s.read());
+            usage.observe(&*s.read());
         }
 
-        write!(f, "{stats}")
+        write!(f, "{usage}")
     }
 }
 
@@ -186,11 +186,7 @@ mod tests {
     }
 
     fn assert_contains(map: &UserMap, p: Uid, t: Uid, expected: bool, label: &str) {
-        assert_eq!(
-            map.contains(p, t),
-            expected,
-            "{label}: contains({p}, {t})",
-        );
+        assert_eq!(map.contains(p, t), expected, "{label}: contains({p}, {t})",);
     }
 
     fn assert_len(map: &UserMap, expected: usize, label: &str) {

@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::stats::{HeapUsage, HeapWaste};
+use crate::usage::{ReportUsage, Usage};
 use crate::users::Uid;
 
 /// Inner storage for one shard's adjacency lists.
@@ -105,19 +105,23 @@ impl Shard {
     }
 }
 
-impl HeapUsage for Shard {
-    fn heap_usage(&self) -> usize {
-        let outer = self.0.capacity() * size_of::<Vec<Uid>>();
-        let inner: usize = self.0.iter().map(|v| v.capacity() * size_of::<Uid>()).sum();
-        outer + inner
-    }
-}
+impl ReportUsage for Shard {
+    fn usage(&self) -> Usage {
+        let mut u = Usage::default();
 
-impl HeapWaste for Shard {
-    fn heap_waste(&self) -> usize {
+        // Outer backbone: Vec<Vec<Uid>>.
+        u.add_heap_usage(self.0.capacity() * size_of::<Vec<Uid>>());
+
         let empty = self.0.iter().filter(|v| v.is_empty()).count();
         let excess = self.0.capacity() - self.0.len();
-        (empty + excess) * size_of::<Vec<Uid>>()
+        u.add_heap_waste((empty + excess) * size_of::<Vec<Uid>>());
+
+        // Inner adjacency lists.
+        for v in &self.0 {
+            u.add_vec(v);
+        }
+
+        u
     }
 }
 
@@ -128,9 +132,10 @@ mod tests {
     const UID_SIZE: usize = size_of::<Uid>();
     const VEC_SIZE: usize = size_of::<Vec<Uid>>();
 
-    fn assert_stats(shard: &Shard, usage: usize, waste: usize, reason: &str) {
-        assert_eq!(shard.heap_usage(), usage, "heap_usage: {reason}");
-        assert_eq!(shard.heap_waste(), waste, "heap_waste: {reason}");
+    fn assert_stats(shard: &Shard, heap: usize, waste: usize, reason: &str) {
+        let u = shard.usage();
+        assert_eq!(u.heap, heap, "heap: {reason}");
+        assert_eq!(u.waste, waste, "waste: {reason}");
     }
 
     #[test]
@@ -185,8 +190,8 @@ mod tests {
         assert_stats(
             &s,
             VEC_SIZE + UID_SIZE,
-            VEC_SIZE,
-            "inner vec retains cap=1 but is empty, counts as backbone waste",
+            VEC_SIZE + UID_SIZE,
+            "empty inner vec: backbone waste + unused inner capacity",
         );
     }
 
