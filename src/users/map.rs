@@ -44,16 +44,11 @@ impl UserMap {
         if shard.insert(idx, target) {
             self.len.fetch_add(1, Ordering::Relaxed);
 
-            trace!(
-                subject,
-                target,
-                len = self.len(),
-                "added target to subject"
-            );
+            trace!(subject, target, len = self.len(), "added target to subject");
         }
     }
 
-    pub fn add_bulk(&self, subject: Uid, targets: impl IntoIterator<Item = Uid>) {
+    pub fn add_bulk<T: IntoIterator<Item = Uid>>(&self, subject: Uid, targets: T) {
         let mut incoming: Vec<Uid> = targets.into_iter().collect();
         incoming.sort_unstable();
         incoming.dedup();
@@ -82,12 +77,9 @@ impl UserMap {
         // TODO: potential optimization bloom-prefilter
         let matched = shard
             .get(idx)
-            .map_or(false, |targets| targets.binary_search(&target).is_ok());
+            .is_some_and(|targets| targets.binary_search(&target).is_ok());
 
-        trace!(
-            subject,
-            target, matched, "search for targets for subject"
-        );
+        trace!(subject, target, matched, "search for targets for subject");
 
         matched
     }
@@ -98,6 +90,10 @@ impl UserMap {
             (user & self.shard_mask) as usize,
             (user >> self.shard_bits) as usize,
         )
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn len(&self) -> usize {

@@ -22,8 +22,8 @@ impl Order {
 
     pub fn sort_unstable_by_key<T, K: Ord>(&self, slice: &mut [T], mut f: impl FnMut(&T) -> K) {
         match self {
-            Order::Asc => slice.sort_unstable_by(|a, b| f(a).cmp(&f(b))),
-            Order::Desc => slice.sort_unstable_by(|a, b| f(b).cmp(&f(a))),
+            Order::Asc => slice.sort_unstable_by_key(|a| f(a)),
+            Order::Desc => slice.sort_unstable_by_key(|b| std::cmp::Reverse(f(b))),
         }
     }
 }

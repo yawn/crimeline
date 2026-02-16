@@ -75,7 +75,7 @@ impl Shard {
         if incoming
             .first()
             .zip(list.last())
-            .map_or(false, |(&first, &last)| first > last)
+            .is_some_and(|(&first, &last)| first > last)
         {
             let before = list.len();
             list.extend_from_slice(incoming);
@@ -84,12 +84,8 @@ impl Shard {
 
         let old_len = list.len();
 
-        // Reserve space and shift old data to the end of the buffer.
-        list.reserve(incoming.len());
-        // SAFETY: we just reserved at least `incoming.len()` additional slots,
-        // so `old_len + incoming.len() <= capacity`. The new tail positions
-        // will be fully overwritten by the merge loop below before being read.
-        unsafe { list.set_len(old_len + incoming.len()) };
+        // Extend with zeros and shift old data to the end of the buffer.
+        list.resize(old_len + incoming.len(), 0);
         list.copy_within(0..old_len, incoming.len());
 
         // Forward merge: old data sits at list[incoming.len()..total],
