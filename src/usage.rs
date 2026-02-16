@@ -99,14 +99,18 @@ impl fmt::Display for Usage {
             write!(f, ", {} on disk", SizeFormatter::new(self.disk, BINARY),)?;
         }
 
-        write!(
-            f,
-            ") across {} ({} active, {}..{})",
-            self.count,
-            self.active,
-            SizeFormatter::new(min, BINARY),
-            SizeFormatter::new(self.max, BINARY),
-        )
+        if self.count > 0 {
+            write!(
+                f,
+                ") across {} ({} active, {}..{})",
+                self.count,
+                self.active,
+                SizeFormatter::new(min, BINARY),
+                SizeFormatter::new(self.max, BINARY),
+            )
+        } else {
+            write!(f, ")")
+        }
     }
 }
 
@@ -184,7 +188,7 @@ mod tests {
         let usage = Usage::new("locks", 2048);
         assert_eq!(
             format!("{usage}"),
-            "2 KiB (2 KiB locks + 0 B data, 0 B wasted) across 0 (0 active, 0 B..0 B)",
+            "2 KiB (2 KiB locks + 0 B data, 0 B wasted)",
         );
     }
 
