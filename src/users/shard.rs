@@ -64,6 +64,10 @@ impl Shard {
 
     /// Merges a **sorted, deduplicated** slice of targets into the sorted list
     /// at `index`. Returns the number of newly added targets.
+    ///
+    /// The slow path uses an in-place forward merge: old data is shifted to the
+    /// end of the buffer and then merged forward with `incoming`, reusing the
+    /// existing allocation instead of allocating a second `Vec`.
     pub fn merge(&mut self, index: usize, incoming: &[Uid]) -> usize {
         let list = self.entry(index);
 
@@ -78,44 +82,69 @@ impl Shard {
             return list.len() - before;
         }
 
-        let old = std::mem::take(list);
+        let old_len = list.len();
 
-        let size_before = old.len();
+        // Reserve space and shift old data to the end of the buffer.
+        list.reserve(incoming.len());
+        // SAFETY: we just reserved at least `incoming.len()` additional slots,
+        // so `old_len + incoming.len() <= capacity`. The new tail positions
+        // will be fully overwritten by the merge loop below before being read.
+        unsafe { list.set_len(old_len + incoming.len()) };
+        list.copy_within(0..old_len, incoming.len());
 
-        let mut merged = Vec::with_capacity(size_before + incoming.len());
+        // Forward merge: old data sits at list[incoming.len()..total],
+        // incoming is the external slice.
+        //
+        // Invariant: write <= i. Proof sketch — write starts at 0 and i starts
+        // at incoming.len(), so (write − i) = −incoming.len(). Only the
+        // Greater arm (incoming wins) increments write without advancing i,
+        // and that arm executes at most incoming.len() times. Hence write ≤ i
+        // throughout, and we never overwrite unread old data.
+        let total = old_len + incoming.len();
+        let mut write = 0;
+        let mut i = incoming.len(); // start of old data in list
+        let mut j = 0; // index into incoming
 
-        {
-            let (mut i, mut j) = (0, 0);
-
-            while i < old.len() && j < incoming.len() {
-                match old[i].cmp(&incoming[j]) {
-                    Ordering::Less => {
-                        merged.push(old[i]);
-                        i += 1;
-                    }
-                    Ordering::Equal => {
-                        merged.push(old[i]);
-                        i += 1;
-                        j += 1;
-                    }
-                    Ordering::Greater => {
-                        merged.push(incoming[j]);
-                        j += 1;
-                    }
+        while i < total && j < incoming.len() {
+            let old_val = list[i];
+            let inc_val = incoming[j];
+            match old_val.cmp(&inc_val) {
+                Ordering::Less => {
+                    list[write] = old_val;
+                    write += 1;
+                    i += 1;
+                }
+                Ordering::Equal => {
+                    list[write] = old_val;
+                    write += 1;
+                    i += 1;
+                    j += 1;
+                }
+                Ordering::Greater => {
+                    list[write] = inc_val;
+                    write += 1;
+                    j += 1;
                 }
             }
-
-            merged.extend_from_slice(&old[i..]);
-            merged.extend_from_slice(&incoming[j..]);
         }
 
-        merged.shrink_to_fit();
+        // Copy remaining old data (already in list, may need shifting).
+        if i < total {
+            list.copy_within(i..total, write);
+            write += total - i;
+        }
 
-        let size_after = merged.len() - size_before;
+        // Copy remaining incoming data.
+        while j < incoming.len() {
+            list[write] = incoming[j];
+            write += 1;
+            j += 1;
+        }
 
-        *list = merged;
+        list.truncate(write);
+        list.shrink_to_fit();
 
-        size_after
+        write - old_len
     }
 }
 
@@ -184,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn stats_dense_principals() {
+    fn stats_dense_subjects() {
         let mut s = Shard::new();
         s.insert(0, 1);
         s.insert(1, 2);

@@ -13,16 +13,16 @@ impl Relationships {
         }
     }
 
-    pub fn is_blocked_by(&self, principal: Uid, target: Uid) -> bool {
-        self.blocks.contains(target, principal)
+    pub fn is_blocked_by(&self, subject: Uid, target: Uid) -> bool {
+        self.blocks.contains(target, subject)
     }
 
-    pub fn is_mutual(&self, principal: Uid, target: Uid) -> bool {
-        self.blocks.contains(principal, target) && self.follows.contains(target, principal)
+    pub fn is_mutual(&self, subject: Uid, target: Uid) -> bool {
+        self.blocks.contains(subject, target) && self.follows.contains(target, subject)
     }
 
-    pub fn is_followed_by(&self, principal: Uid, target: Uid) -> bool {
-        self.follows.contains(target, principal)
+    pub fn is_followed_by(&self, subject: Uid, target: Uid) -> bool {
+        self.follows.contains(target, subject)
     }
 }
 
@@ -38,43 +38,43 @@ mod tests {
 
     fn assert_blocked(
         rel: &Relationships,
-        principal: Uid,
+        subject: Uid,
         target: Uid,
         expected: bool,
         label: &str,
     ) {
         assert_eq!(
-            rel.is_blocked_by(principal, target),
+            rel.is_blocked_by(subject, target),
             expected,
-            "{label}: is_blocked_by({principal}, {target})",
+            "{label}: is_blocked_by({subject}, {target})",
         );
     }
 
     fn assert_followed(
         rel: &Relationships,
-        principal: Uid,
+        subject: Uid,
         target: Uid,
         expected: bool,
         label: &str,
     ) {
         assert_eq!(
-            rel.is_followed_by(principal, target),
+            rel.is_followed_by(subject, target),
             expected,
-            "{label}: is_followed_by({principal}, {target})",
+            "{label}: is_followed_by({subject}, {target})",
         );
     }
 
     fn assert_mutual(
         rel: &Relationships,
-        principal: Uid,
+        subject: Uid,
         target: Uid,
         expected: bool,
         label: &str,
     ) {
         assert_eq!(
-            rel.is_mutual(principal, target),
+            rel.is_mutual(subject, target),
             expected,
-            "{label}: is_mutual({principal}, {target})",
+            "{label}: is_mutual({subject}, {target})",
         );
     }
 
@@ -82,8 +82,8 @@ mod tests {
     fn blocked_asymmetric() {
         let r = rel();
         r.blocks.add(1, 2);
-        assert_blocked(&r, 2, 1, true, "target blocked by principal");
-        assert_blocked(&r, 1, 2, false, "principal is not blocked by target");
+        assert_blocked(&r, 2, 1, true, "target blocked by subject");
+        assert_blocked(&r, 1, 2, false, "subject is not blocked by target");
     }
 
     #[test]
@@ -112,8 +112,8 @@ mod tests {
     fn followed_asymmetric() {
         let r = rel();
         r.follows.add(2, 1);
-        assert_followed(&r, 1, 2, true, "target follows principal");
-        assert_followed(&r, 2, 1, false, "principal does not follow target");
+        assert_followed(&r, 1, 2, true, "target follows subject");
+        assert_followed(&r, 2, 1, false, "subject does not follow target");
     }
 
     #[test]
@@ -178,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn mutual_multiple_principals_isolated() {
+    fn mutual_multiple_subjects_isolated() {
         let r = rel();
         r.blocks.add(10, 20);
         r.blocks.add(30, 40);
@@ -239,16 +239,16 @@ mod tests {
                 ref_follows.insert((p, t));
             }
 
-            for &(principal, target) in &queries {
+            for &(subject, target) in &queries {
                 let expected =
-                    ref_blocks.contains(&(principal, target))
-                    && ref_follows.contains(&(target, principal));
+                    ref_blocks.contains(&(subject, target))
+                    && ref_follows.contains(&(target, subject));
 
                 prop_assert_eq!(
-                    rel.is_mutual(principal, target),
+                    rel.is_mutual(subject, target),
                     expected,
                     "mutual({}, {}): expected {}",
-                    principal,
+                    subject,
                     target,
                     expected,
                 );

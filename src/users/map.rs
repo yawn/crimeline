@@ -37,28 +37,28 @@ impl UserMap {
         }
     }
 
-    pub fn add(&self, principal: Uid, target: Uid) {
-        let (s, idx) = self.find(principal);
+    pub fn add(&self, subject: Uid, target: Uid) {
+        let (s, idx) = self.find(subject);
         let mut shard = self.shards[s].write();
 
         if shard.insert(idx, target) {
             self.len.fetch_add(1, Ordering::Relaxed);
 
             trace!(
-                principal,
+                subject,
                 target,
                 len = self.len(),
-                "added target to principal"
+                "added target to subject"
             );
         }
     }
 
-    pub fn add_bulk(&self, principal: Uid, targets: impl IntoIterator<Item = Uid>) {
+    pub fn add_bulk(&self, subject: Uid, targets: impl IntoIterator<Item = Uid>) {
         let mut incoming: Vec<Uid> = targets.into_iter().collect();
         incoming.sort_unstable();
         incoming.dedup();
 
-        let (s, idx) = self.find(principal);
+        let (s, idx) = self.find(subject);
         let mut shard = self.shards[s].write();
 
         let added = shard.merge(idx, &incoming);
@@ -67,16 +67,16 @@ impl UserMap {
             self.len.fetch_add(added, Ordering::Relaxed);
 
             trace!(
-                principal,
+                subject,
                 targets = incoming.len(),
                 len = self.len(),
-                "added multiple targets to principal"
+                "added multiple targets to subject"
             );
         }
     }
 
-    pub fn contains(&self, principal: Uid, target: Uid) -> bool {
-        let (s, idx) = self.find(principal);
+    pub fn contains(&self, subject: Uid, target: Uid) -> bool {
+        let (s, idx) = self.find(subject);
         let shard = self.shards[s].read();
 
         // TODO: potential optimization bloom-prefilter
@@ -85,8 +85,8 @@ impl UserMap {
             .map_or(false, |targets| targets.binary_search(&target).is_ok());
 
         trace!(
-            principal,
-            target, matched, "search for targets for principal"
+            subject,
+            target, matched, "search for targets for subject"
         );
 
         matched
@@ -104,18 +104,18 @@ impl UserMap {
         self.len.load(Ordering::Relaxed)
     }
 
-    pub fn remove(&self, principal: Uid, target: Uid) {
-        let (s, idx) = self.find(principal);
+    pub fn remove(&self, subject: Uid, target: Uid) {
+        let (s, idx) = self.find(subject);
         let mut shard = self.shards[s].write();
 
         if shard.delete(idx, target) {
             self.len.fetch_sub(1, Ordering::Relaxed);
 
             trace!(
-                principal,
+                subject,
                 target,
                 len = self.len(),
-                "removed target from principal"
+                "removed target from subject"
             );
         }
     }
@@ -196,10 +196,10 @@ mod tests {
     fn assert_matches(
         map: &UserMap,
         reference: &HashMap<Uid, BTreeSet<Uid>>,
-        principals: &BTreeSet<Uid>,
+        subjects: &BTreeSet<Uid>,
         targets: &BTreeSet<Uid>,
     ) {
-        for &p in principals {
+        for &p in subjects {
             for &t in targets {
                 let expected = reference.get(&p).map_or(false, |s| s.contains(&t));
                 assert_eq!(
@@ -240,7 +240,7 @@ mod tests {
         map.add(1_000_000, 2_000_000);
         assert_contains(&map, 1_000_000, 2_000_000, true, "large ids");
         assert_contains(&map, 1_000_000, 0, false, "large ids, wrong target");
-        assert_contains(&map, 0, 2_000_000, false, "large ids, wrong principal");
+        assert_contains(&map, 0, 2_000_000, false, "large ids, wrong subject");
         assert_len(&map, 1, "large ids");
     }
 
@@ -277,7 +277,7 @@ mod tests {
         #[test]
         fn fuzz_bulk_equivalence(
             sharding in sharding_strategy(),
-            principal in 0..200u32,
+            subject in 0..200u32,
             existing in prop::collection::vec(0..1000u32, 0..50),
             incoming in prop::collection::vec(0..1000u32, 0..50),
         ) {
@@ -285,21 +285,21 @@ mod tests {
             let individual_map = UserMap::new(sharding);
 
             for &t in &existing {
-                bulk_map.add(principal, t);
-                individual_map.add(principal, t);
+                bulk_map.add(subject, t);
+                individual_map.add(subject, t);
             }
 
-            bulk_map.add_bulk(principal, incoming.iter().copied());
+            bulk_map.add_bulk(subject, incoming.iter().copied());
             for &t in &incoming {
-                individual_map.add(principal, t);
+                individual_map.add(subject, t);
             }
 
             let all_targets: BTreeSet<Uid> = existing.iter().chain(&incoming).copied().collect();
             for &t in &all_targets {
                 prop_assert_eq!(
-                    bulk_map.contains(principal, t),
-                    individual_map.contains(principal, t),
-                    "mismatch at ({}, {})", principal, t,
+                    bulk_map.contains(subject, t),
+                    individual_map.contains(subject, t),
+                    "mismatch at ({}, {})", subject, t,
                 );
             }
             prop_assert_eq!(bulk_map.len(), individual_map.len());
@@ -313,23 +313,23 @@ mod tests {
             let map = UserMap::new(sharding);
             let mut reference: HashMap<Uid, BTreeSet<Uid>> = HashMap::new();
 
-            let mut principals = BTreeSet::new();
+            let mut subjects = BTreeSet::new();
             let mut targets = BTreeSet::new();
 
             for op in &ops {
                 apply_and_track(&map, &mut reference, op);
                 match *op {
                     Op::Add(p, t) | Op::Remove(p, t) => {
-                        principals.insert(p);
+                        subjects.insert(p);
                         targets.insert(t);
                     }
                 }
             }
 
-            principals.insert(999);
+            subjects.insert(999);
             targets.insert(999);
 
-            assert_matches(&map, &reference, &principals, &targets);
+            assert_matches(&map, &reference, &subjects, &targets);
         }
     }
 }
