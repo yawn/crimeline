@@ -52,31 +52,31 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    #[test]
-    fn range_asc() {
-        let v: Vec<usize> = Order::Asc.range(2..5).collect();
-        assert_eq!(v, vec![2, 3, 4]);
-    }
-
-    #[test]
-    fn range_desc() {
-        let v: Vec<usize> = Order::Desc.range(2..5).collect();
-        assert_eq!(v, vec![4, 3, 2]);
-    }
-
     proptest! {
         #[test]
-        fn sort_unstable_by_key_orders_correctly(mut v: Vec<u64>) {
+        fn fuzz_sort_and_range(mut v: Vec<u64>, start in 0..50usize, len in 0..50usize) {
+            // sort: asc and desc produce inverse orderings of the same elements
             let mut asc = v.clone();
             Order::Asc.sort_unstable_by_key(&mut asc, |x| *x);
-            assert!(asc.windows(2).all(|w| w[0] <= w[1]), "asc not monotonic");
+            prop_assert!(asc.windows(2).all(|w| w[0] <= w[1]), "asc not monotonic");
 
             Order::Desc.sort_unstable_by_key(&mut v, |x| *x);
-            assert!(v.windows(2).all(|w| w[0] >= w[1]), "desc not monotonic");
+            prop_assert!(v.windows(2).all(|w| w[0] >= w[1]), "desc not monotonic");
 
-            // same elements, opposite order
             v.reverse();
-            assert_eq!(v, asc, "desc reversed should equal asc");
+            prop_assert_eq!(&v, &asc, "desc reversed should equal asc");
+
+            // range: asc and desc yield same elements in opposite order
+            let end = start + len;
+            let fwd: Vec<usize> = Order::Asc.range(start..end).collect();
+            let mut rev: Vec<usize> = Order::Desc.range(start..end).collect();
+            rev.reverse();
+            prop_assert_eq!(&fwd, &rev, "range elements should match");
+
+            if !fwd.is_empty() {
+                prop_assert_eq!(fwd[0], start);
+                prop_assert_eq!(*fwd.last().unwrap(), end - 1);
+            }
         }
     }
 }

@@ -37,60 +37,32 @@ impl Window {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
-    #[test]
-    fn absolute_roundtrip() {
-        let span = Window::new(1000, 100);
-        let ts: Timestamp = 1042;
-        assert_eq!(span.convert_to_absolute(span.convert_to_relative(ts)), ts);
-    }
+    proptest! {
+        #[test]
+        fn fuzz_window(
+            epoch in 0..u64::MAX / 2,
+            duration in 1..100_000u32,
+            offset in 0..100_000u64,
+        ) {
+            let span = Window::new(epoch, duration);
 
-    #[test]
-    fn absolute_at_zero() {
-        let span = Window::new(1000, 100);
-        assert_eq!(span.convert_to_absolute(0), 1000);
-    }
+            // end_exclusive is always epoch + duration
+            prop_assert_eq!(span.end_exclusive(), epoch + duration as u64);
 
-    #[test]
-    fn contains_before_epoch() {
-        let span = Window::new(1000, 100);
-        assert!(!span.contains(999));
-    }
+            let ts = epoch + offset;
 
-    #[test]
-    fn contains_start_inclusive() {
-        let span = Window::new(1000, 100);
-        assert!(span.contains(1000), "start should be inclusive");
-    }
+            // contains is [epoch, epoch+duration)
+            let expected = ts >= epoch && ts < epoch + duration as u64;
+            prop_assert_eq!(span.contains(ts), expected, "contains({})", ts);
 
-    #[test]
-    fn contains_end_exclusive() {
-        let span = Window::new(1000, 100);
-        assert!(!span.contains(1100), "end should be exclusive");
-    }
-
-    #[test]
-    fn contains_mid() {
-        let span = Window::new(1000, 100);
-        assert!(span.contains(1050));
-    }
-
-    #[test]
-    fn end_equals_epoch_plus_duration() {
-        let span = Window::new(500, 200);
-        assert_eq!(span.end_exclusive(), 700);
-    }
-
-    #[test]
-    fn relative_at_epoch() {
-        let span = Window::new(1000, 100);
-        assert_eq!(span.convert_to_relative(1000), 0);
-    }
-
-    #[test]
-    fn relative_mid() {
-        let span = Window::new(1000, 100);
-        assert_eq!(span.convert_to_relative(1042), 42);
+            // roundtrip for timestamps inside the window
+            if expected {
+                let rel = span.convert_to_relative(ts);
+                prop_assert_eq!(span.convert_to_absolute(rel), ts, "roundtrip({})", ts);
+            }
+        }
     }
 
     #[test]

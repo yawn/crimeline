@@ -167,8 +167,8 @@ mod tests {
 
     fn op_strategy() -> impl Strategy<Value = Op> {
         prop_oneof![
-            (0..200u32, 0..200u32).prop_map(|(p, t)| Op::Add(p, t)),
-            (0..200u32, 0..200u32).prop_map(|(p, t)| Op::Remove(p, t)),
+            (0..10_000u32, 0..10_000u32).prop_map(|(p, t)| Op::Add(p, t)),
+            (0..10_000u32, 0..10_000u32).prop_map(|(p, t)| Op::Remove(p, t)),
         ]
     }
 
@@ -183,14 +183,6 @@ mod tests {
                 reference.entry(p).or_default().remove(&t);
             }
         }
-    }
-
-    fn assert_contains(map: &UserMap, p: Uid, t: Uid, expected: bool, label: &str) {
-        assert_eq!(map.contains(p, t), expected, "{label}: contains({p}, {t})",);
-    }
-
-    fn assert_len(map: &UserMap, expected: usize, label: &str) {
-        assert_eq!(map.len(), expected, "{label}: len");
     }
 
     fn assert_matches(
@@ -216,70 +208,13 @@ mod tests {
         assert_eq!(map.len(), expected_len, "len mismatch");
     }
 
-    #[test]
-    fn edge_add_remove_add() {
-        let map = UserMap::new(Sharding::S128);
-        map.add(0, 1);
-        map.remove(0, 1);
-        map.add(0, 1);
-        assert_contains(&map, 0, 1, true, "re-added after remove");
-        assert_len(&map, 1, "re-added after remove");
-    }
-
-    #[test]
-    fn edge_empty_map() {
-        let map = UserMap::new(Sharding::S128);
-        assert_contains(&map, 0, 0, false, "empty map");
-        assert_contains(&map, 1, 1, false, "empty map");
-        assert_len(&map, 0, "empty map");
-    }
-
-    #[test]
-    fn edge_large_user_ids() {
-        let map = UserMap::new(Sharding::S128);
-        map.add(1_000_000, 2_000_000);
-        assert_contains(&map, 1_000_000, 2_000_000, true, "large ids");
-        assert_contains(&map, 1_000_000, 0, false, "large ids, wrong target");
-        assert_contains(&map, 0, 2_000_000, false, "large ids, wrong subject");
-        assert_len(&map, 1, "large ids");
-    }
-
-    #[test]
-    fn edge_remove_from_empty() {
-        let map = UserMap::new(Sharding::S128);
-        map.remove(0, 1);
-        assert_contains(&map, 0, 1, false, "remove from empty");
-        assert_len(&map, 0, "remove from empty");
-    }
-
-    #[test]
-    fn edge_self_reference() {
-        let map = UserMap::new(Sharding::S128);
-        map.add(5, 5);
-        assert_contains(&map, 5, 5, true, "self-reference");
-        assert_contains(&map, 5, 0, false, "self-reference, wrong target");
-        assert_len(&map, 1, "self-reference");
-    }
-
-    #[test]
-    fn edge_shard_boundary_ids() {
-        let map = UserMap::new(Sharding::S128);
-        map.add(127, 128);
-        map.add(128, 127);
-        assert_contains(&map, 127, 128, true, "shard boundary");
-        assert_contains(&map, 128, 127, true, "shard boundary reverse");
-        assert_contains(&map, 127, 127, false, "shard boundary, wrong target");
-        assert_contains(&map, 128, 128, false, "shard boundary, wrong target");
-        assert_len(&map, 2, "shard boundary");
-    }
-
     proptest! {
         #[test]
         fn fuzz_bulk_equivalence(
             sharding in sharding_strategy(),
-            subject in 0..200u32,
-            existing in prop::collection::vec(0..1000u32, 0..50),
-            incoming in prop::collection::vec(0..1000u32, 0..50),
+            subject in 0..10_000u32,
+            existing in prop::collection::vec(0..10_000u32, 0..50),
+            incoming in prop::collection::vec(0..10_000u32, 0..50),
         ) {
             let bulk_map = UserMap::new(sharding);
             let individual_map = UserMap::new(sharding);
