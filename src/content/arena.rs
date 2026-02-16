@@ -386,9 +386,8 @@ impl TryInto<Arc<Cold>> for Hot {
         let mut perm: Vec<usize> = (0..n).collect();
         perm.sort_unstable_by_key(|&i| (timestamps[i], cids[i]));
 
-        let sorted_timestamps: Vec<u32> = perm.iter().map(|&i| timestamps[i]).collect();
-
-        let sorted_uids: Vec<Uid> = perm.iter().map(|&i| uids[i]).collect();
+        let (sorted_timestamps, sorted_uids): (Vec<u32>, Vec<Uid>) =
+            perm.iter().map(|&i| (timestamps[i], uids[i])).unzip();
 
         trace!(len = n, "froze arena");
 

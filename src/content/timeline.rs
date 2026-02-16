@@ -35,7 +35,7 @@ impl Timeline {
             let pos = next
                 .binary_search_by_key(&arena.span.epoch, |a| a.span.epoch)
                 .unwrap_or_else(|i| i);
-            next.insert(pos, arena.clone());
+            next.insert(pos, Arc::clone(&arena));
             next
         });
 
@@ -44,11 +44,9 @@ impl Timeline {
 
     pub fn remove(&self, epoch: Timestamp) {
         self.arenas.rcu(|current| {
-            current
-                .iter()
-                .filter(|a| a.span.epoch != epoch)
-                .cloned()
-                .collect::<Vec<_>>()
+            let mut next = (**current).clone();
+            next.retain(|a| a.span.epoch != epoch);
+            next
         });
 
         trace!(epoch, len = self.len(), "removed arena from timeline");

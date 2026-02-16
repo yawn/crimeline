@@ -77,7 +77,9 @@ impl Shard {
         {
             let before = list.len();
             list.extend_from_slice(incoming);
-            list.shrink_to_fit();
+            if list.capacity() >= list.len() * 2 {
+                list.shrink_to_fit();
+            }
             return list.len() - before;
         }
 
@@ -256,14 +258,16 @@ mod tests {
     }
 
     #[test]
-    fn stats_merge_exact_capacity() {
+    fn stats_merge_tolerates_slack() {
         let mut s = Shard::new();
         s.merge(0, &[1, 2, 3]);
-        assert_stats(
-            &s,
-            VEC_SIZE + 3 * UID_SIZE,
-            0,
-            "shrink_to_fit gives exact capacity",
+        let u = s.usage();
+        let useful = VEC_SIZE + 3 * UID_SIZE;
+        assert!(u.heap >= useful, "heap: {}", u.heap);
+        assert!(
+            u.heap < useful + 3 * UID_SIZE,
+            "heap should not have excessive slack: {}",
+            u.heap,
         );
     }
 
