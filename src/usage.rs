@@ -30,7 +30,7 @@ impl Usage {
     }
 
     pub fn add_boxed_slice<T>(&mut self, s: &[T]) {
-        self.heap += s.len() * size_of::<T>();
+        self.heap += std::mem::size_of_val(s);
     }
 
     pub fn add_heap_usage(&mut self, bytes: usize) {
