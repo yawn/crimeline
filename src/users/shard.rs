@@ -47,15 +47,12 @@ impl Shard {
         self.0.get(index).map(|v| v.as_slice())
     }
 
-    /// Inserts exactly one (1) target. This will perform bad if used
-    /// for multiple uids (instead of using merge()).
     pub fn insert(&mut self, index: usize, target: Uid) -> bool {
         let list = self.entry(index);
 
         match list.binary_search(&target) {
             Ok(_) => false,
             Err(pos) => {
-                list.reserve_exact(1);
                 list.insert(pos, target);
                 true
             }
@@ -71,14 +68,16 @@ impl Shard {
     pub fn merge(&mut self, index: usize, incoming: &[Uid]) -> usize {
         let list = self.entry(index);
 
-        // Fast path: all incoming > all existing — just append.
-        if incoming
-            .first()
-            .zip(list.last())
-            .is_some_and(|(&first, &last)| first > last)
+        // Fast path: empty list or all incoming > all existing — just append.
+        if list.is_empty()
+            || incoming
+                .first()
+                .zip(list.last())
+                .is_some_and(|(&first, &last)| first > last)
         {
             let before = list.len();
             list.extend_from_slice(incoming);
+            list.shrink_to_fit();
             return list.len() - before;
         }
 
@@ -138,7 +137,9 @@ impl Shard {
         }
 
         list.truncate(write);
-        list.shrink_to_fit();
+        if list.capacity() >= list.len() * 2 {
+            list.shrink_to_fit();
+        }
 
         write - old_len
     }
@@ -223,12 +224,11 @@ mod tests {
         let mut s = Shard::new();
         s.insert(0, 1);
         s.delete(0, 1);
-        assert_stats(
-            &s,
-            VEC_SIZE + UID_SIZE,
-            VEC_SIZE + UID_SIZE,
-            "empty inner vec: backbone waste + unused inner capacity",
-        );
+        let u = s.usage();
+        // After delete: backbone has 1 empty slot, inner vec has capacity but
+        // len 0. Everything is waste.
+        assert!(u.heap > 0, "still has allocations");
+        assert_eq!(u.waste, u.heap, "all heap is waste after delete");
     }
 
     #[test]
@@ -236,12 +236,11 @@ mod tests {
         let mut s = Shard::new();
         s.insert(0, 1);
         s.insert(1, 2);
-        assert_stats(
-            &s,
-            2 * VEC_SIZE + 2 * UID_SIZE,
-            0,
-            "2 dense backbone slots, no padding",
-        );
+        let u = s.usage();
+        // 2 backbone slots + 2 targets; waste reflects amortised inner capacity.
+        let useful = 2 * VEC_SIZE + 2 * UID_SIZE;
+        assert!(u.heap >= useful, "heap: {}", u.heap);
+        assert_eq!(u.waste, u.heap - useful, "waste = excess inner capacity");
     }
 
     #[test]
@@ -272,18 +271,25 @@ mod tests {
     fn stats_single_insert() {
         let mut s = Shard::new();
         s.insert(0, 42);
-        assert_stats(&s, VEC_SIZE + UID_SIZE, 0, "1 backbone slot + 1 target");
+        let u = s.usage();
+        // 1 backbone slot + 1 target; waste reflects amortised inner capacity.
+        let useful = VEC_SIZE + UID_SIZE;
+        assert!(u.heap >= useful, "heap: {}", u.heap);
+        assert_eq!(u.waste, u.heap - useful, "waste = excess inner capacity");
     }
 
     #[test]
     fn stats_sparse_index() {
         let mut s = Shard::new();
         s.insert(2, 42);
-        assert_stats(
-            &s,
-            3 * VEC_SIZE + UID_SIZE,
-            2 * VEC_SIZE,
-            "3 backbone slots, slots 0 and 1 are empty padding",
+        let u = s.usage();
+        // 3 backbone slots (0,1 empty padding + 2 with data) + 1 target.
+        let useful = VEC_SIZE + UID_SIZE;
+        assert!(u.heap >= 3 * VEC_SIZE + UID_SIZE, "heap: {}", u.heap);
+        assert_eq!(
+            u.waste,
+            u.heap - useful,
+            "waste = 2 empty backbone slots + excess inner capacity",
         );
     }
 }

@@ -7,11 +7,13 @@ use super::arena::{Cold, Entry};
 use super::{Order, Timestamp};
 
 pub struct Slice {
-    arena_idx: usize,
-    arenas: Vec<Arc<Cold>>,
+    arena_pos: usize,
     entry_pos: usize,
+    first: usize,
+    n_relevant: usize,
     order: Order,
     skip: usize,
+    snapshot: Arc<Vec<Arc<Cold>>>,
     start: Timestamp,
 }
 
@@ -20,7 +22,8 @@ pub struct Timeline {
 }
 
 impl Timeline {
-    pub fn new(arenas: Vec<Arc<Cold>>) -> Self {
+    pub fn new(mut arenas: Vec<Arc<Cold>>) -> Self {
+        arenas.sort_unstable_by_key(|a| a.span.epoch);
         Timeline {
             arenas: ArcSwap::new(Arc::new(arenas)),
         }
@@ -29,7 +32,10 @@ impl Timeline {
     pub fn add(&self, arena: Arc<Cold>) {
         self.arenas.rcu(|current| {
             let mut next = (**current).clone();
-            next.push(arena.clone());
+            let pos = next
+                .binary_search_by_key(&arena.span.epoch, |a| a.span.epoch)
+                .unwrap_or_else(|i| i);
+            next.insert(pos, arena.clone());
             next
         });
 
@@ -51,26 +57,31 @@ impl Timeline {
     pub fn iter(&self, start: Timestamp, order: Order) -> Slice {
         let snapshot = self.arenas.load_full();
 
-        let mut relevant: Vec<Arc<Cold>> = snapshot
-            .iter()
-            .filter(|a| a.span.end_exclusive() > start)
-            .cloned()
-            .collect();
+        // Arenas are kept sorted by epoch. Find first with entries past `start`.
+        let first = (0..snapshot.len())
+            .find(|&i| snapshot[i].span.end_exclusive() > start)
+            .unwrap_or(snapshot.len());
+        let n_relevant = snapshot.len() - first;
 
-        order.sort_unstable_by_key(&mut relevant, |a| a.span.epoch);
-
-        let skip = relevant
-            .first()
-            .map(|arena| Self::compute_skip(arena, start))
-            .unwrap_or(0);
+        let skip = if n_relevant > 0 {
+            let initial = match order {
+                Order::Asc => first,
+                Order::Desc => snapshot.len() - 1,
+            };
+            Self::compute_skip(&snapshot[initial], start)
+        } else {
+            0
+        };
 
         Slice {
-            arenas: relevant,
-            start,
-            skip,
-            arena_idx: 0,
+            snapshot,
+            first,
+            n_relevant,
+            arena_pos: 0,
             entry_pos: 0,
             order,
+            skip,
+            start,
         }
     }
 
@@ -97,21 +108,29 @@ impl Slice {
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<Entry<'_>> {
         loop {
-            if self.arena_idx >= self.arenas.len() {
+            if self.arena_pos >= self.n_relevant {
                 return None;
             }
 
-            let arena = &*self.arenas[self.arena_idx];
+            let arena_idx = match self.order {
+                Order::Asc => self.first + self.arena_pos,
+                Order::Desc => self.snapshot.len() - 1 - self.arena_pos,
+            };
+            let arena = &*self.snapshot[arena_idx];
             let skip = self.skip;
             let len = arena.len();
             let effective = len - skip;
 
             if self.entry_pos >= effective {
-                self.arena_idx += 1;
+                self.arena_pos += 1;
                 self.entry_pos = 0;
 
-                if self.arena_idx < self.arenas.len() {
-                    self.skip = Timeline::compute_skip(&self.arenas[self.arena_idx], self.start);
+                if self.arena_pos < self.n_relevant {
+                    let next = match self.order {
+                        Order::Asc => self.first + self.arena_pos,
+                        Order::Desc => self.snapshot.len() - 1 - self.arena_pos,
+                    };
+                    self.skip = Timeline::compute_skip(&self.snapshot[next], self.start);
                 }
 
                 continue;
@@ -132,8 +151,8 @@ impl Slice {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::arena::Hot;
     use crate::content::Window;
+    use crate::content::arena::Hot;
     use proptest::prelude::*;
 
     fn make_arena(epoch: u64, duration: u32, n: usize) -> Arc<Cold> {

@@ -91,9 +91,12 @@ impl Hot {
         B: AsRef<[u8]>,
         T: IntoIterator<Item = (Uid, Cid, Timestamp, B)>,
     {
+        let mut cids: Vec<Cid> = Vec::with_capacity(BLOB_BATCH);
+        let mut blobs: Vec<B> = Vec::with_capacity(BLOB_BATCH);
+
         for chunk in &entries.into_iter().chunks(BLOB_BATCH) {
-            let mut cids: Vec<Cid> = Vec::new();
-            let mut blobs: Vec<B> = Vec::new();
+            cids.clear();
+            blobs.clear();
 
             for (uid, cid, ts, blob) in chunk {
                 if !self.cid_set.insert(cid) {
