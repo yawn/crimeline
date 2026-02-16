@@ -92,6 +92,7 @@ impl UserMap {
         )
     }
 
+    #[cfg_attr(coverage_nightly, coverage(off))]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

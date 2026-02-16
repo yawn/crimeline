@@ -178,6 +178,73 @@ mod tests {
     }
 
     #[test]
+    fn merge_fast_path_all_incoming_greater() {
+        let mut s = Shard::new();
+        s.merge(0, &[1, 2, 3]);
+
+        let added = s.merge(0, &[10, 20, 30]);
+        assert_eq!(added, 3, "all incoming are new");
+        assert_eq!(s.get(0).unwrap(), &[1, 2, 3, 10, 20, 30]);
+    }
+
+    #[test]
+    fn merge_fast_path_empty_existing() {
+        let mut s = Shard::new();
+        s.entry(0); // create empty list
+
+        // empty list has no last(), so is_some_and returns false => slow path
+        let added = s.merge(0, &[5, 10]);
+        assert_eq!(added, 2);
+        assert_eq!(s.get(0).unwrap(), &[5, 10]);
+    }
+
+    #[test]
+    fn merge_fast_path_single_existing_single_incoming() {
+        let mut s = Shard::new();
+        s.insert(0, 1);
+
+        let added = s.merge(0, &[2]);
+        assert_eq!(added, 1);
+        assert_eq!(s.get(0).unwrap(), &[1, 2]);
+    }
+
+    #[test]
+    fn merge_slow_path_interleaved() {
+        let mut s = Shard::new();
+        s.merge(0, &[1, 5, 10]);
+
+        let added = s.merge(0, &[3, 5, 7, 12]);
+        assert_eq!(added, 3, "5 is duplicate");
+        assert_eq!(s.get(0).unwrap(), &[1, 3, 5, 7, 10, 12]);
+    }
+
+    #[test]
+    fn stats_delete_leaves_empty_slot() {
+        let mut s = Shard::new();
+        s.insert(0, 1);
+        s.delete(0, 1);
+        assert_stats(
+            &s,
+            VEC_SIZE + UID_SIZE,
+            VEC_SIZE + UID_SIZE,
+            "empty inner vec: backbone waste + unused inner capacity",
+        );
+    }
+
+    #[test]
+    fn stats_dense_subjects() {
+        let mut s = Shard::new();
+        s.insert(0, 1);
+        s.insert(1, 2);
+        assert_stats(
+            &s,
+            2 * VEC_SIZE + 2 * UID_SIZE,
+            0,
+            "2 dense backbone slots, no padding",
+        );
+    }
+
+    #[test]
     fn stats_empty() {
         assert_stats(&Shard::new(), 0, 0, "no allocations");
     }
@@ -187,6 +254,18 @@ mod tests {
         let mut s = Shard::new();
         s.entry(0);
         assert_stats(&s, VEC_SIZE, VEC_SIZE, "1 backbone slot, empty inner vec");
+    }
+
+    #[test]
+    fn stats_merge_exact_capacity() {
+        let mut s = Shard::new();
+        s.merge(0, &[1, 2, 3]);
+        assert_stats(
+            &s,
+            VEC_SIZE + 3 * UID_SIZE,
+            0,
+            "shrink_to_fit gives exact capacity",
+        );
     }
 
     #[test]
@@ -205,44 +284,6 @@ mod tests {
             3 * VEC_SIZE + UID_SIZE,
             2 * VEC_SIZE,
             "3 backbone slots, slots 0 and 1 are empty padding",
-        );
-    }
-
-    #[test]
-    fn stats_dense_subjects() {
-        let mut s = Shard::new();
-        s.insert(0, 1);
-        s.insert(1, 2);
-        assert_stats(
-            &s,
-            2 * VEC_SIZE + 2 * UID_SIZE,
-            0,
-            "2 dense backbone slots, no padding",
-        );
-    }
-
-    #[test]
-    fn stats_delete_leaves_empty_slot() {
-        let mut s = Shard::new();
-        s.insert(0, 1);
-        s.delete(0, 1);
-        assert_stats(
-            &s,
-            VEC_SIZE + UID_SIZE,
-            VEC_SIZE + UID_SIZE,
-            "empty inner vec: backbone waste + unused inner capacity",
-        );
-    }
-
-    #[test]
-    fn stats_merge_exact_capacity() {
-        let mut s = Shard::new();
-        s.merge(0, &[1, 2, 3]);
-        assert_stats(
-            &s,
-            VEC_SIZE + 3 * UID_SIZE,
-            0,
-            "shrink_to_fit gives exact capacity",
         );
     }
 }
