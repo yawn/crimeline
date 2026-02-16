@@ -7,8 +7,17 @@ edition = "2024"
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage_nightly)'] }
 
 [dependencies]
+anyhow = "1.0"
+arc-swap = "1"
+arrow = { version = "57", default-features = false, features = ["ipc"] }
+arrow-buffer = "57"
+bytes = "1"
 humansize = "2"
+itertools = "0.14"
+memmap2 = "0.9"
 parking_lot = "0.12"
+parquet = { version = "57", default-features = false, features = ["arrow", "zstd"] }
+tempfile = "3"
 tracing = { version = "0.1", features = ["max_level_debug"] }
 
 [dev-dependencies]
@@ -16,5 +25,13 @@ criterion = "0.8"
 proptest = "1"
 
 [[bench]]
+name = "arena"
+harness = false
+
+[[bench]]
 name = "usermap"
+harness = false
+
+[[bench]]
+name = "timeline"
 harness = false
